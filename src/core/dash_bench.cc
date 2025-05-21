@@ -119,8 +119,33 @@ int64_t GetNow() {
 #endif
 }
 
+#if defined(__aarch64__) && defined(__linux__)
+#include <sys/auxv.h>
+
+#ifndef HWCAP_SB
+#define HWCAP_SB (1 << 29)
+#endif  // HWCAP_SB
+
+static inline void arm_arch_pause(void) {
+  static int use_spin_delay_sb = -1;
+  if (__builtin_expect(use_spin_delay_sb == 1, 1)) {
+    asm volatile(".inst 0xd50330ff");  // SB instruction encoding
+  } else if (use_spin_delay_sb == 0) {
+    asm volatile("ISB");
+  } else {
+    // Initialize variable and check if SB is supported
+    if (getauxval(AT_HWCAP) & HWCAP_SB)
+      use_spin_delay_sb = 1;
+    else
+      use_spin_delay_sb = 0;
+  }
+}
+#endif  // __aarch64__  __linux__
+
 #if defined(__i386__) || defined(__amd64__)
 #define LFENCE __asm__ __volatile__("lfence")
+#elif defined(__aarch64__) && defined(__linux__)
+#define LFENCE arm_arch_pause()
 #else
 #define LFENCE __asm__ __volatile__("ISB")
 #endif
